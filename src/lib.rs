@@ -5,8 +5,10 @@ mod sys;
 
 use monitor::*;
 use monitor::instruction::*;
+use std::cmp::Reverse;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::{thread};
+use std::fmt::Write;
 use std::error::Error;
 use std::path::PathBuf;
 use rustyline::{Editor, history::DefaultHistory};
@@ -16,7 +18,7 @@ use rustyline::completion::{Completer, Pair};
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
-use rustyline::{Helper, Context};
+use rustyline::{Context, ExternalPrinter, Helper};
 use rustyline::error::ReadlineError;
 
 use crate::channel::{ChannelResponse, ProgramStatus};
@@ -89,6 +91,10 @@ impl Taskmaster {
         let mut rl = Editor::<CmdHelper, DefaultHistory>::new().unwrap();
         rl.set_helper(Some(CmdHelper));
 
+        let printer = rl.create_external_printer().unwrap();
+
+        Taskmaster::receive_and_print_response(printer, receiver);
+
         loop {
             let line = rl.readline("Taskmaster $> ");
             
@@ -96,6 +102,8 @@ impl Taskmaster {
                 Ok(l) => l,
                 Err(_) => break,
             };
+
+            if line.trim().is_empty() { continue; }
 
             rl.add_history_entry(line.as_str()).ok();
 
@@ -107,37 +115,53 @@ impl Taskmaster {
                 }
             };
             
-            
             if sender.send(instruction).is_err() {
-                eprintln!("Failed to execute instruction");
-            }
-            
-            match receiver.recv() {
-                Ok(response) => {
-                    match response {
-                        ChannelResponse::Status(statuses) => {
-                            Self::display_status_result(statuses);
-                        }
-                        ChannelResponse::Error(err) => {
-                            eprintln!("Error: {err}");
-                        }
-                        ChannelResponse::Feedback(feedback) => {
-                            println!("{feedback}");
-                        }
-                    }
-                }
-                Err(err) => eprintln!("Failed to receive program statuses: {err}"),
+                eprintln!("Failed to send instruction to backend");
             }
         }
     }
-    
-    fn display_status_result(statuses: Vec<ProgramStatus>) {
-        println!("{:<5} | {:<20} | {:<10}", "ID", "NAME", "STATUS");
-        println!("{:-<50}", "");
+
+    pub fn receive_and_print_response<P>(mut printer: P, receiver: Receiver<ChannelResponse>)
+    where 
+        P: ExternalPrinter + Send + 'static 
+    {
+        thread::spawn(move || {
+            let p_green = "\x1b[38;2;161;212;161m";
+            let p_orange = "\x1b[38;2;255;187;119m";
+            let reset = "\x1b[0m";
+
+            while let Ok(response) = receiver.recv() {
+                let output = match response {
+                    ChannelResponse::Status(statuses) => {
+                        format!("{}\n", Taskmaster::format_status_result(statuses))
+                    }
+                    ChannelResponse::Error(err) => {
+                        format!("    {p_orange}Error: {err}{reset}\n")
+                    }
+                    ChannelResponse::Feedback(feedback) => {
+                        format!("    {p_green}{feedback}{reset}\n")
+                    }
+                };
+
+                let _ = printer.print(output);
+            }
+        });
+    }
+
+    pub fn format_status_result(statuses: Vec<ProgramStatus>) -> String {
+        let mut buffer = String::new();
+        
+        let _ = writeln!(buffer, "\n    {:<5} | {:<20} | {:<10}", "ID", "NAME", "STATUS");
+        let _ = writeln!(buffer, "    {:-<50}", "");
 
         for status in statuses {
-            println!("{:<5} | {:<20} | {:<10}", status.id, status.name, status.status);
+            let _ = writeln!(buffer, "    {:<5} | {:<20} | {:<10}", 
+                status.id, 
+                status.name, 
+                status.status
+            );
         }
 
+        buffer
     }
 }
