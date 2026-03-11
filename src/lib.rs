@@ -76,10 +76,9 @@ impl Taskmaster {
     pub fn execute(mut self) -> Result<(), Box<dyn Error>> {
         let (sender, receiver) = mpsc::channel::<Instruction>();
         let (sender_result, receiver_response) = mpsc::channel::<ChannelResponse>();
-        let sender_clone = sender.clone();
         let mut monitor = Monitor::new(&self.config_file_path)?;
         thread::spawn(move || {
-            monitor.execute(receiver, sender_clone, sender_result);
+            monitor.execute(receiver, sender_result);
         });
         self.cli(sender, receiver_response);
         Ok(())
@@ -108,30 +107,26 @@ impl Taskmaster {
                 }
             };
             
-            let should_wait: bool = matches!(instruction, Instruction::Status);
-
             
             if sender.send(instruction).is_err() {
                 eprintln!("Failed to execute instruction");
             }
             
-            if should_wait {
-                match receiver.recv() {
-                    Ok(response) => {
-                        match response {
-                            ChannelResponse::Status(statuses) => {
-                                Self::display_status_result(statuses);
-                            }
-                            ChannelResponse::Error(err) => {
-                                eprintln!("Error: {err}");
-                            }
-                            ChannelResponse::Feedback(feedback) => {
-                                println!("{feedback}");
-                            }
+            match receiver.recv() {
+                Ok(response) => {
+                    match response {
+                        ChannelResponse::Status(statuses) => {
+                            Self::display_status_result(statuses);
+                        }
+                        ChannelResponse::Error(err) => {
+                            eprintln!("Error: {err}");
+                        }
+                        ChannelResponse::Feedback(feedback) => {
+                            println!("{feedback}");
                         }
                     }
-                    Err(err) => eprintln!("Failed to receive program statuses: {err}"),
                 }
+                Err(err) => eprintln!("Failed to receive program statuses: {err}"),
             }
         }
     }
