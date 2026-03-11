@@ -1,26 +1,13 @@
 Autostart infinity
 Autostart infinito
 Starting program infinity
-Starting processus infinity   0  , 3 atempt left
-Starting processus infinity   1  , 3 atempt left
+Starting processus infinity 0, 3 atempt left
+Starting processus infinity 1, 3 atempt left
 Starting program infinito
-Starting processus infinito   2  , 3 atempt left
-Starting processus infinito   3  , 3 atempt left
-Seting status of processus infinity   0   to Active
-Seting status of processus infinity   1   to Active
-Seting status of processus infinito   2   to Active
-Seting status of processus infinito   3   to Active
+Starting processus infinito 2, 3 atempt left
+Starting processus infinito 3, 3 atempt left
 Displaying Status
-Stoping infinito
-Processus infinito   2   was stopped by a signal: 15
-Processus infinito   3   was stopped by a signal: 15
-Reset processus infinito   2  
-Reset processus infinito   3  
-Displaying Status
-Shutting down taskmaster
-Stoping infinity
-Stoping infinito
-Processus infinity   0   was stopped by a signal: 15
-Processus infinity   1   was stopped by a signal: 15
-Reset processus infinity   0  
-Reset processus infinity   1  
+Seting status of processus infinity 0 to Active
+Seting status of processus infinity 1 to Active
+Seting status of processus infinito 2 to Active
+Seting status of processus infinito 3 to Active

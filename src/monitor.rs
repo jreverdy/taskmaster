@@ -4,6 +4,7 @@ pub mod logger;
 pub mod instruction;
 pub mod parsing;
 
+
 use std::error::Error;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::Ordering;
@@ -19,6 +20,7 @@ use program::Program;
 use parsing::Parsing;
 use instruction::Instruction;
 
+use crate::channel::{ChannelResponse, ProgramStatus};
 use crate::signal::{Signal};
 use crate::sys::{Libc, self};
 
@@ -66,7 +68,7 @@ impl Monitor {
         })
     }
 
-    pub fn execute(&mut self, receiver: Receiver<Instruction>, mut sender: Sender<Instruction>) {
+    pub fn execute(&mut self, receiver: Receiver<Instruction>, mut sender: Sender<Instruction>, mut sender_result: Sender<ChannelResponse>) {
         if Libc::signal(Signal::SIGHUP, sig_handler).is_err() {
             eprintln!("Signal function failed, taskmaster won't be able to handle SIGHUP");
         }
@@ -85,7 +87,7 @@ impl Monitor {
             while let Some(instruction) = instruction_queue.pop_front() {
                 match instruction {
                     // Instruction from cli
-                    Instruction::Status => self.status_command(),
+                    Instruction::Status => self.status_command(&mut sender_result),
                     Instruction::Start(programs) => self.start_command(programs),
                     Instruction::Stop(programs) => self.stop_command(programs),
                     Instruction::Restart(programs) => self.restart_command(programs, &mut sender),
@@ -300,20 +302,24 @@ impl Monitor {
         instructions
     }
 
-    fn status_command(&mut self) {
-        println!("{:-<55}", "-");
-        println!("| {:^5} | {:^20} | {:^20} |", "ID", "NAME", "STATUS");
-        println!("{:-<55}", "-");
-        for proc in self.processus.iter_mut() {
-                println!("| {:^5} | {:^20} | {:^20} |", proc.id, proc.name.chars().take(20).collect::<String>(), proc.status);
+    fn status_command(&mut self, sender: &mut Sender<ChannelResponse>) {
+
+        let mut statuses: Vec<ProgramStatus> = Vec::new();
+        for processus in self.processus.iter() {
+            let status = ProgramStatus {
+                id: processus.id.to_string(),
+                name: processus.name.to_owned(),
+                status: processus.status.to_string(),
+            };
+            statuses.push(status);
         }
-        println!("{:-<55}", "-");
+        sender.send(ChannelResponse::Status(statuses)).ok();
+
         self.logger.log("Displaying Status");
     }
 
-    fn start_command(&mut self, names: Vec<String>) {
+    fn start_command(&mut self, names: Vec<String>, sender: &mut Sender<ChannelResponse>) {
         for name in names {
-            self.logger.log(&format!("Starting program {}", &name));
             if self.programs.get_mut(&name).is_none() {
                 eprintln!("Program not found: {name}");
                 continue;
@@ -328,10 +334,11 @@ impl Monitor {
             for pid in filtered_processus_ids {
                 self.start_processus(pid, false);
             }
+            self.logger.log(&format!("Starting program {}", &name));
         }
     }
 
-    fn stop_command(&mut self, names: Vec<String>) {
+    fn stop_command(&mut self, names: Vec<String>, sender: &mut Sender<ChannelResponse>) {
         for name in names {
             let program = if let Some(program) = self.programs.get_mut(&name) {
                 program
@@ -364,25 +371,27 @@ impl Monitor {
         }
     }
 
-    fn restart_command(&mut self, names: Vec<String>, sender: &mut Sender<Instruction>) {
+    fn restart_command(&mut self, names: Vec<String>, sender_result: &mut Sender<ChannelResponse>) {
+        let send_result = match self.restart_programs(names) {
+            Ok(()) => sender_result.send(ChannelResponse::Feedback("Programs restarted successfully".to_string())),
+            Err(err) => sender_result.send(ChannelResponse::Error(err.to_string())),
+        };
+        if send_result.is_err() {
+            self.logger.log(&format!("Failed to send restart command result: {send_result:?}"));
+        }
+        
+    }
+
+    fn restart_programs(&mut self, names: Vec<String>) -> Result<(), Box<dyn Error>> {
         for name in &names {
             if self.programs.get(name).is_none() {
-                eprintln!("Program not found: {name}");
-                return ;
+                return Err("Program not found".into());
             }
         }
 
-        self.stop_command(names.to_owned());
-        
-        for name in names {
-            self.logger.log(&format!("Restarting {name}"));
-            let duration = Duration::new(self.programs.get(&name).expect("program not found").config.stoptime as u64, 0);
-            let sender = sender.clone();
-            thread::spawn(move || {
-                thread::sleep(duration);
-                sender.send(Instruction::Start(vec!(name))).ok();
-            });
-        }
+        self.stop_programs(names.to_owned());
+        self.start_programs(names.to_owned());
+        Ok(())
     }
 
     fn autostart(&mut self) {

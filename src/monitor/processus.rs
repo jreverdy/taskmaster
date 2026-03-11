@@ -25,11 +25,11 @@ impl fmt::Display for Status {
     //todo understand formating with fmt::Display
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Status::Starting => write!(f, "{:^20}", "Starting".to_string()),
-            Status::Stoping => write!(f, "{:^20}", "Stoping"),
-            Status::Active => write!(f, "{:^20}", "Active"),
-            Status::Inactive => write!(f, "{:^20}", "Inactive"),
-            Status::Reloading => write!(f, "{:^20}", "Reloading"),
+            Status::Starting => write!(f, "Starting"),
+            Status::Stoping => write!(f, "Stoping"),
+            Status::Active => write!(f, "Active"),
+            Status::Inactive => write!(f, "Inactive"),
+            Status::Reloading => write!(f, "Reloading"),
         }
     }
 }
