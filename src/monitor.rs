@@ -99,7 +99,7 @@ impl Monitor {
                     Instruction::RetryStartProcessus(id) => self.start_processus(id, true),
                     Instruction::SetStatus(id, status) => self.set_status(id, status),
                     Instruction::KillProcessus(id) => self.kill_processus(id),
-                    Instruction::Exit => self.stop_all(),
+                    Instruction::Exit => self.exit_command(),
                 }
             }
             let mut iteration_instructions: VecDeque<Instruction> = VecDeque::new();
@@ -459,7 +459,7 @@ impl Monitor {
         }
     }
 
-    fn stop_all(&mut self) {
+    fn exit_command(&mut self) {
         let mut to_stop = Vec::new();
         self.logger.log("Shutting down taskmaster");
         for (name, _) in self.programs.iter() {
@@ -477,66 +477,84 @@ impl Monitor {
         }
         process::exit(0);
     }
-    
-    // TODO: check if it is normal that once a program is stopped and the conf reloaded, program is not restarted
+
+    fn clear_removed_programs(&mut self, new_config: &HashMap<String, Program>) {
+        let to_remove: Vec<String> = self.programs.keys()
+            .filter(|name| !name.starts_with(INACTIVE_FLAG) && !new_config.contains_key(*name))
+            .cloned()
+            .collect();
+
+        for name in to_remove {
+            self.stop_programs(vec![name.clone()]);
+            self.programs.remove(&name);
+            self.processus.retain(|p| p.name != name);
+        }
+    }
+
+    fn update_program(&mut self, name: String, mut program: Program, sender: &mut Sender<ChannelResponse>) {
+        if let Err(err) = program.build_command() {
+            let _ = sender.send(ChannelResponse::Error(format!("Program {name}: {err}")));
+            return;
+        }
+
+        self.stop_programs(vec![name.clone()]);
+
+        self.processus.iter_mut()
+            .filter(|p| p.name == name)
+            .for_each(|p| p.status = Status::Reloading);
+
+        program.deactivate();
+        
+        let inactive_key = Program::prefix_name(INACTIVE_FLAG, name);
+        self.programs.insert(inactive_key, program);
+    }
+
+    fn add_program(&mut self, name: String, mut program: Program, sender: &mut Sender<ChannelResponse>) {
+        if let Err(err) = program.build_command() {
+            let _ = sender.send(ChannelResponse::Error(format!("Program {name}: {err}")));
+            return;
+        }
+
+        for _ in 0..program.config.numprocs {
+            self.processus.push(Processus::new(&name, &program));
+        }
+
+        let autostart = program.config.autostart;
+        self.programs.insert(name.clone(), program);
+
+        if autostart {
+            self.start_programs(vec![name]);
+        }
+    }
+
     fn reload(&mut self, sender_result: &mut Sender<ChannelResponse>) {
         self.logger.log("Reloading config file");
-        let new_programs = match Parsing::parse(&self.config_file_path) {
-            Ok(programs) => programs,
+
+        let mut new_programs = match Parsing::parse(&self.config_file_path) {
+            Ok(p) => p,
             Err(err) => {
-                self.logger.log(&format!("Failed to reload config file: {err}"));
-                sender_result.send(ChannelResponse::Error(format!("Failed to reload config file: {err}"))).ok();
+                let msg = format!("Failed to reload config file: {err}");
+                self.logger.log(&msg);
+                let _ = sender_result.send(ChannelResponse::Error(msg));
                 return;
             }
         };
-        // 1. If some programs disapeared we stop the concerned procs and do not track them anymore
-        let to_remove: Vec<String> = self.programs.iter_mut().filter_map(|e| {
-            if !new_programs.contains_key(e.0) {
-                Some(e.0.to_owned())
-            } else {
-                None
-            }
-        }).collect();
-        self.stop_programs(to_remove.to_owned());
-        for name in &to_remove {
-            for proc in self.processus.iter_mut().filter(|e| &e.name == name) {
-                proc.status = Status::Reloading;
-            }
-        }
-        for (name, mut program) in new_programs {
-            if self.programs.contains_key(&name) {
-                // 2. Check all progs and if the conf hasn't changed do nothing
-                if self.programs.iter().find(|e| e.0 == &name).unwrap().1.config == program.config {
-                    continue;
-                } else {
-                    // 3. If something has changed then restart the procs with the new config
-                    if let Err(err) = program.build_command() {
-                        sender_result.send(ChannelResponse::Error(format!("Program {name}: {err}"))).ok();
-                        continue;
+
+        self.clear_removed_programs(&new_programs);
+
+        for (name, program) in new_programs.drain() {
+            match self.programs.get(&name) {
+                Some(old_program) => {
+                    if old_program.config != program.config {
+                        self.update_program(name, program, sender_result);
                     }
-                    self.stop_programs(vec!(name.to_owned()));
-                    for proc in self.processus.iter_mut().filter(|e| e.name == name) {
-                        proc.status = Status::Reloading;
-                    }
-                    program.deactivate();
-                    self.programs.insert(Program::prefix_name(INACTIVE_FLAG, name), program);
                 }
-            } else {
-                // 4. If some new programs appeared we start tracking them and start if necessery
-                if let Err(err) = program.build_command() {
-                    sender_result.send(ChannelResponse::Error(format!("Program {name}: {err}"))).ok();
-                    continue;
-                }
-                for _ in 0..program.config.numprocs {
-                    self.processus.push(Processus::new(&name, &program));
-                }
-                self.programs.insert(name.to_owned(), program);
-                let program = self.programs.get(&name).unwrap();
-                if program.config.autostart {
-                    self.start_programs(vec![name]);
+                None => {
+                    self.add_program(name, program, sender_result);
                 }
             }
         }
-        sender_result.send(ChannelResponse::Feedback("Config reloaded successfully".to_string())).ok();
+
+        let _ = sender_result.send(ChannelResponse::Feedback("Config reloaded successfully".to_owned()));
     }
 }
