@@ -1,0 +1,18 @@
+worker:
+    cmd: "./worker.sh"
+    numprocs: 5
+    umask: 022
+    workingdir: ./test/scaling
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+        - 0
+    startretries: 2
+    starttime: 3
+    stopsignal: SIGTERM
+    stoptime: 5
+    stdout: ./worker.stdout
+    stderr: ./worker.stderr
+    env:
+        STARTED_BY: taskmaster
+        WORKER_TYPE: scaling_test

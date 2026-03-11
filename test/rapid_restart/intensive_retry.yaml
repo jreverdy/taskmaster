@@ -1,0 +1,20 @@
+failing_job:
+    cmd: "./error_task.sh"
+    numprocs: 2
+    umask: 022
+    workingdir: ./test/rapid_restart
+    autostart: true
+    autorestart: always
+    exitcodes:
+        - 0
+        - 1
+        - 2
+    startretries: 10
+    starttime: 1
+    stopsignal: SIGTERM
+    stoptime: 2
+    stdout: ./failing.stdout
+    stderr: ./failing.stderr
+    env:
+        STARTED_BY: taskmaster
+        JOB_TYPE: retry_intensive

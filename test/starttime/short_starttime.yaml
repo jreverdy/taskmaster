@@ -1,0 +1,11 @@
+programs:
+  slow_starter:
+    command: /bin/bash ./test/starttime/startup_delay.sh
+    numprocs: 1
+    autostart: true
+    autorestart: unexpected
+    starttime: 1
+    startretries: 2
+    stopsignal: SIGTERM
+    stoptime: 3
+    exitcodes: 0

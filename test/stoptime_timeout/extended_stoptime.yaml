@@ -1,0 +1,18 @@
+stubborn:
+    cmd: "./stubborn_process.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: ./test/stoptime_timeout
+    autostart: true
+    autorestart: never
+    exitcodes:
+        - 0
+        - 1
+    startretries: 1
+    starttime: 2
+    stopsignal: SIGTERM
+    stoptime: 5
+    stdout: ./stubborn.stdout
+    stderr: ./stubborn.stderr
+    env:
+        STARTED_BY: taskmaster

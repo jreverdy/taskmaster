@@ -12,7 +12,7 @@ pub fn get_config_from_args() -> PathBuf {
         _ => { eprintln!("Taskmaster: Missing config file name"); process::exit(1);},
     };
     
-    if let Err(err) = check_file_with_extension(&path, "conf") {
+    if let Err(err) = check_file_with_extension(&path, "yaml") {
         eprintln!("Taskmaster: Config path: {err}");
         process::exit(1);
     }

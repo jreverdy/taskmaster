@@ -1,0 +1,17 @@
+cleanup_worker:
+    cmd: "./long_cleanup.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: ./test/stoptime_timeout
+    autostart: true
+    autorestart: never
+    exitcodes:
+        - 0
+    startretries: 2
+    starttime: 3
+    stopsignal: SIGTERM
+    stoptime: 20
+    stdout: ./cleanup.stdout
+    stderr: ./cleanup.stderr
+    env:
+        STARTED_BY: taskmaster

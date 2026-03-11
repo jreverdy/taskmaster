@@ -1,0 +1,18 @@
+quick_job:
+    cmd: "./quick_task.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: ./test/rapid_restart
+    autostart: true
+    autorestart: always
+    exitcodes:
+        - 0
+    startretries: 5
+    starttime: 1
+    stopsignal: SIGTERM
+    stoptime: 2
+    stdout: ./quick_job.stdout
+    stderr: ./quick_job.stderr
+    env:
+        STARTED_BY: taskmaster
+        JOB_TYPE: quick

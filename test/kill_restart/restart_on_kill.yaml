@@ -1,0 +1,11 @@
+programs:
+  kill_test_worker:
+    command: /bin/bash ./test/kill_restart/simple_worker.sh
+    numprocs: 1
+    autostart: true
+    autorestart: unexpected
+    starttime: 1
+    startretries: 5
+    stopsignal: SIGTERM
+    stoptime: 2
+    exitcodes: 0

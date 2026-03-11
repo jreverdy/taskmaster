@@ -1,0 +1,18 @@
+program:
+    cmd: "./force_kill.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: ./test/signal_handling
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+        - 0
+        - 1
+    startretries: 2
+    starttime: 2
+    stopsignal: SIGKILL
+    stoptime: 2
+    stdout: ./force_kill.stdout
+    stderr: ./force_kill.stderr
+    env:
+        STARTED_BY: taskmaster

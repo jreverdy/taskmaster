@@ -1,0 +1,17 @@
+program:
+    cmd: "./graceful_shutdown.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: ./test/signal_handling
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+        - 0
+    startretries: 3
+    starttime: 2
+    stopsignal: SIGTERM
+    stoptime: 3
+    stdout: ./graceful_shutdown.stdout
+    stderr: ./graceful_shutdown.stderr
+    env:
+        STARTED_BY: taskmaster

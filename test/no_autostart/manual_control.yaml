@@ -1,0 +1,18 @@
+manual_service:
+    cmd: "./manual_service.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: ./test/no_autostart
+    autostart: false
+    autorestart: unexpected
+    exitcodes:
+        - 0
+    startretries: 3
+    starttime: 2
+    stopsignal: SIGTERM
+    stoptime: 5
+    stdout: ./manual_service.stdout
+    stderr: ./manual_service.stderr
+    env:
+        STARTED_BY: taskmaster
+        SERVICE_TYPE: manual

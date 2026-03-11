@@ -1,0 +1,18 @@
+background_worker:
+    cmd: "./manual_service.sh"
+    numprocs: 3
+    umask: 022
+    workingdir: ./test/no_autostart
+    autostart: false
+    autorestart: always
+    exitcodes:
+        - 0
+    startretries: 5
+    starttime: 1
+    stopsignal: SIGTERM
+    stoptime: 3
+    stdout: ./background.stdout
+    stderr: ./background.stderr
+    env:
+        STARTED_BY: taskmaster
+        SERVICE_TYPE: background
