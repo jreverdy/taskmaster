@@ -198,11 +198,9 @@ impl Monitor {
                     "always" => {Some(Instruction::StartProcessus(processus.id))},
                     "never" => {Some(Instruction::ResetProcessus(processus.id))},
                     "unexpected" => {
-                        let is_normal_exit_code = program.config.exitcodes.iter().find(|&&e| e == code.code().expect("Failed to get exit code"));
-                        if is_normal_exit_code.is_none() {
-                            Some(Instruction::StartProcessus(processus.id))
-                        } else {
-                            Some(Instruction::ResetProcessus(processus.id))
+                        match code.code() {
+                            Some(code) if program.config.exitcodes.contains(&code) => Some(Instruction::ResetProcessus(processus.id)),
+                            _ => Some(Instruction::StartProcessus(processus.id)),
                         }
                     },
                     _ => {panic!("autorestart has an invalid value");}
@@ -285,8 +283,6 @@ impl Monitor {
                             if let Some(signal) = code.signal() {
                                 if processus.status != Status::Reloading {
                                     self.logger.log(&format!("Processus {} {} was stopped by a signal: {}", processus.name, processus.id, signal));
-                                    instructions.push(Instruction::ResetProcessus(processus.id));
-                                    continue;
                                 }
                             }
                         }
