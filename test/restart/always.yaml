@@ -8,7 +8,7 @@ program:
     exitcodes:
         - 0
     startretries: 3
-    starttime: 0
+    starttime: 3
     stopsignal: SIGTERM
     stoptime: 3
     stdout: ./restart.stdout

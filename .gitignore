@@ -21,3 +21,5 @@ target
 #.idea/start_programs
 
 taskmaster.log
+*.stderr
+*.stdout

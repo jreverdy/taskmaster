@@ -5,7 +5,6 @@ mod sys;
 
 use monitor::*;
 use monitor::instruction::*;
-use std::cmp::Reverse;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::{thread};
 use std::fmt::Write;

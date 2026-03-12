@@ -19,11 +19,11 @@ infinity:
         ANSWER: "42"
 infinito:
     cmd: "./infinity.sh"
-    numprocs: 2
+    numprocs: 3
     umask: 0777
     workingdir: ./test
     autostart: true
-    autorestart: unexpected
+    autorestart: always
     exitcodes:
         - 0
         - 2
@@ -31,8 +31,8 @@ infinito:
     starttime: 5
     stopsignal: SIGTERM
     stoptime: 10
-    stdout: test.log
-    stderr: gogo.log
+    stdout: stdout.log
+    stderr: stderr.log
     env:
         STARTED_BY: taskmaster
         ANSWER: "42"
