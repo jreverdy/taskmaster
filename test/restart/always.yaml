@@ -1,4 +1,4 @@
-program:
+success:
     cmd: "./exit_success.sh"
     numprocs: 1
     umask: 022
@@ -17,7 +17,7 @@ program:
         STARTED_BY: taskmaster
         ANSWER: "42"
 
-program:
+failure:
     cmd: "./exit_failure.sh"
     numprocs: 1
     umask: 022
