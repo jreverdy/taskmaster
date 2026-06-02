@@ -342,7 +342,6 @@ impl Monitor {
             let program = if let Some(program) = self.programs.get_mut(&name) {
                 program
             } else {
-                eprintln!("Program not found: {name}");
                 sender_result.send(ChannelResponse::Error(format!("Program not found: {name}"))).ok();
                 continue;
             };
@@ -386,7 +385,7 @@ impl Monitor {
     fn restart_programs(&mut self, names: Vec<String>) -> Option<Box<dyn Error>> {
         for name in &names {
             if self.programs.get(name).is_none() {
-                return Some("Program not found".into());
+                return Some(format!("Program not found: {name}").into());
             }
         }
 

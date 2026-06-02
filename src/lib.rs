@@ -110,7 +110,7 @@ impl Taskmaster {
             let instruction: Instruction = match line.trim().parse() {
                 Ok(res) => res,
                 Err(err) => {
-                    eprintln!("{err}");
+                    eprintln!("    \x1b[38;2;255;187;119m{err}\x1b[0m");
                     continue;
                 }
             };
