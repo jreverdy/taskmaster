@@ -39,6 +39,8 @@ pub struct Monitor {
     programs: HashMap<String, Program>,
 }
 
+
+
 impl Monitor {
     pub fn new(file_path: &PathBuf) -> Result<Self, Box<dyn Error>> {
         let mut programs = Parsing::parse(file_path)?;
@@ -134,7 +136,7 @@ impl Monitor {
     fn set_status(&mut self, id: Id, status: Status) {
         if let Some(processus) = Self::get_processus(&mut self.processus, id) {
             processus.status = status;
-            self.logger.log(&format!("Seting status of processus {} {} to Active", processus.name, processus.id));
+            self.logger.log(&format!("Setting status of processus {} {} to Active", processus.name, processus.id));
         }
     }
 

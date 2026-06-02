@@ -1,5 +1,5 @@
 use std::{io, fs::File, error::Error};
-
+use::chrono::Local;
 pub struct Logger {
     output: Box<dyn io::Write + Send + Sync>,
 }
@@ -12,6 +12,7 @@ impl Default for Logger {
     }
 }
 
+
 impl Logger {
     pub fn new(file_path: &str) -> Result<Self, Box<dyn Error>> {
         let output = match File::create(file_path) {
@@ -22,8 +23,8 @@ impl Logger {
             output
         })
     }
-
     pub fn log(&mut self, msg: &str) {
-        writeln!(self.output, "{msg}").ok();
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+        writeln!(self.output, "[{timestamp}] {msg}").ok();
     }
 }
