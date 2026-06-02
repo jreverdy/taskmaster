@@ -50,7 +50,7 @@ impl Processus {
             id: Default::default(),
             name: name.to_owned(),
             child: None,
-            retries: program.config.startretries,
+            retries: program.config.startretries + 1,
             timer: Instant::now(),
             status: Status::Inactive,
         }
@@ -74,17 +74,13 @@ impl Processus {
         Ok(())
     }
 
-    pub fn start_child(&mut self, command: &mut Command, start_retries: usize, mask: u32, restart: bool) -> Result<bool, Box<dyn Error>> {
-        if restart && self.retries == 0 {
-            self.status = Status::Inactive;
-            self.retries = start_retries;
-            self.child = None;
+    pub fn start_child(&mut self, command: &mut Command, start_retries: usize, mask: u32) -> Result<bool, Box<dyn Error>> {
+        if self.retries <= 0 {
+            self.reset_child(start_retries);
             Ok(true)
         } else {
             self.status = Status::Starting;
-            if restart {
-                self.retries -= 1;
-            }
+            self.retries -= 1;
             self.child = Some(Libc::umask(command, mask).map_err(|err| {
                 self.reset_child(start_retries);
                 format!("Child {} spawn failed: {err}", self.name)})?);
@@ -96,6 +92,6 @@ impl Processus {
     pub fn reset_child(&mut self, start_retries: usize) {
         self.child = None;
         self.status = Status::Inactive;
-        self.retries = start_retries;
+        self.retries = start_retries + 1;
     }
 }

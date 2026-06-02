@@ -7,7 +7,7 @@ success:
     autorestart: always
     exitcodes:
         - 0
-    startretries: 3
+    startretries: 1
     starttime: 3
     stopsignal: SIGTERM
     stoptime: 3
@@ -26,7 +26,7 @@ failure:
     autorestart: always
     exitcodes:
         - 0
-    startretries: 3
+    startretries: 1
     starttime: 3
     stopsignal: SIGTERM
     stoptime: 3
