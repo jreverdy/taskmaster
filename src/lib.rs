@@ -85,13 +85,14 @@ impl Taskmaster {
         Ok(())
     }
 
-
     fn cli(&mut self, sender: Sender<Instruction>, receiver: Receiver<ChannelResponse>) {
         let mut rl = Editor::<CmdHelper, DefaultHistory>::new().unwrap();
         rl.set_helper(Some(CmdHelper));
 
-        let printer = rl.create_external_printer().unwrap();
+        let mut printer = rl.create_external_printer().unwrap();
 
+        Self::print_welcome_message(&mut printer);
+        
         Taskmaster::receive_and_print_response(printer, receiver);
 
         loop {
@@ -162,5 +163,10 @@ impl Taskmaster {
         }
 
         buffer
+    }
+
+    fn print_welcome_message<P: ExternalPrinter>(printer: &mut P) {
+        let commands_list = COMMANDS.join(", ");
+        let _ = printer.print(format!("Commands: {commands_list}\n"));
     }
 }
