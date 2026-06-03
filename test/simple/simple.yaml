@@ -2,7 +2,7 @@ infinity:
     cmd: "./infinity.sh"
     numprocs: 2
     umask: 0222
-    workingdir: ./test
+    workingdir: ./test/simple
     autostart: true
     autorestart: unexpected
     exitcodes:
@@ -21,7 +21,7 @@ infinito:
     cmd: "./infinity.sh"
     numprocs: 3
     umask: 0777
-    workingdir: ./test
+    workingdir: ./test/simple
     autostart: true
     autorestart: always
     exitcodes:

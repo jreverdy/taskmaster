@@ -1,0 +1,19 @@
+excessive_output:
+    cmd: "./excessive_output.sh"
+    numprocs: 1
+    umask: 0222
+    workingdir: ./test/excessive_output
+    autostart: true
+    autorestart: never
+    exitcodes:
+        - 0
+        - 2
+    startretries: 3
+    starttime: 0
+    stopsignal: SIGTERM
+    stoptime: 10
+    stdout: ./out.stdout
+    stderr: ./out.stderr
+    env:
+        STARTED_BY: taskmaster
+        ANSWER: "42"
