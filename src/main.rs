@@ -3,13 +3,13 @@ mod file;
 use taskmaster::Taskmaster;
 
 fn main() {
-
     let taskmaster = Taskmaster::new(file::get_config_from_args()).unwrap_or_else(|err| {
-        eprintln!("Taskmaster: {err}");
+        eprintln!("Taskmaster: {}", err);
         process::exit(1);
     });
+
     taskmaster.execute().unwrap_or_else(|err| {
-        eprintln!("Taskmaster: {err}");
+        eprintln!("Taskmaster: failed to read the configuration file: {}", err);
         process::exit(1);
     });
 }

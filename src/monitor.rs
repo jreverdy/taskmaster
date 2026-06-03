@@ -74,7 +74,7 @@ impl Monitor {
         if Libc::signal(Signal::SIGHUP, sig_handler).is_err() {
             eprintln!("Signal function failed, taskmaster won't be able to handle SIGHUP");
         }
-        self.autostart();
+        self.autostart(&mut sender_result);
 
         let mut instruction_queue: VecDeque<Instruction> = VecDeque::new();
         
@@ -95,10 +95,10 @@ impl Monitor {
                     Instruction::Restart(programs) => self.restart_command(programs, &mut sender_result),
                     Instruction::Reload => self.reload(&mut sender_result),
                     // Instruction not from Cli
-                    Instruction::RemoveProcessus(id) => self.remove_processus(id),
-                    Instruction::StartProcessus(id) => self.start_processus(id),
+                    Instruction::RemoveProcessus(id) => self.remove_processus(id, &mut sender_result),
+                    Instruction::StartProcessus(id) => self.start_processus(id, &mut sender_result),
                     Instruction::ResetProcessus(id) => self.reset_processus(id),
-                    Instruction::RetryStartProcessus(id) => self.start_processus(id),
+                    Instruction::RetryStartProcessus(id) => self.start_processus(id, &mut sender_result),
                     Instruction::SetStatus(id, status) => self.set_status(id, status),
                     Instruction::KillProcessus(id) => self.kill_processus(id),
                     Instruction::Exit => self.exit_command(),
@@ -140,23 +140,50 @@ impl Monitor {
         }
     }
 
-    fn start_processus(&mut self, id: Id) {
-        if let Some(processus) = Self::get_processus(&mut self.processus, id) {
-            if let Some(program) = self.programs.get_mut(&processus.name) {
-                if let Some(command) = &mut program.command {
-                    match processus.start_child(command, program.config.startretries, program.config.umask) {
-                        Ok(false) => {self.logger.log(&format!("Starting processus {} {}, {} atempt left", processus.name, processus.id, processus.retries));},
-                        Ok(true) => {self.logger.log(&format!("Failed to start processus {} {}, no atempt left", processus.name, processus.id));},
-                        Err(err) => {eprintln!("{err:?}");self.logger.log(&format!("{err:?}"));},
-                    } 
-                } else {
-                    eprintln!("Can't find command to start processus {} {}", processus.name, processus.id);
+  fn start_processus(&mut self, id: Id, sender_result: &mut Sender<ChannelResponse>) {
+    if let Some(processus) = Self::get_processus(&mut self.processus, id) {
+        if let Some(program) = self.programs.get_mut(&processus.name) {
+            if let Some(command) = &mut program.command {
+                match processus.start_child(
+                    command,
+                    program.config.startretries,
+                    program.config.umask,
+                ) {
+                    Ok(false) => {
+                        self.logger.log(&format!(
+                            "Starting processus {} {}, {} attempt left", processus.name, processus.id, processus.retries)
+                        );
+                    }
+                    Ok(true) => {
+                        self.logger.log(&format!("Failed to start processus {} {}, no attempt left", processus.name, processus.id)
+                    );
+                    }
+                    Err(err) => {
+                        let msg = format!("{err}");
+
+                        let _ = sender_result.send(
+                            ChannelResponse::Feedback(msg.clone())
+                        );
+
+                        self.logger.log(&msg);
+                    }
                 }
             } else {
-                eprintln!("Can't find program to start processus {} {}", processus.name, processus.id);
+                eprintln!(
+                    "Can't find command to start processus {} {}",
+                    processus.name,
+                    processus.id
+                );
             }
+        } else {
+            eprintln!(
+                "Can't find program to start processus {} {}",
+                processus.name,
+                processus.id
+            );
         }
     }
+}
 
     fn reset_processus(&mut self, id: Id) {
         if let Some(processus) = Self::get_processus(&mut self.processus, id) {
@@ -167,7 +194,7 @@ impl Monitor {
         }
     }
 
-    fn remove_processus(&mut self, id: Id) {
+    fn remove_processus(&mut self, id: Id, sender: &mut Sender<ChannelResponse>) {
         if let Some(processus) = Self::get_processus(&mut self.processus, id) {
             let processus_name = processus.name.to_owned();
             self.processus.retain(|proc| proc.id != id);
@@ -186,7 +213,7 @@ impl Monitor {
                         self.processus.push(Processus::new(&processus_name, program));
                     }
                     if program.config.autostart {
-                        self.start_programs(vec![processus_name]);
+                        self.start_programs(vec![processus_name], sender);
                     }
                 }
             }
@@ -330,7 +357,7 @@ impl Monitor {
                 }
             }).collect();
             for pid in filtered_processus_ids {
-                self.start_processus(pid);
+                self.start_processus(pid, sender_result);
             }
             sender_result.send(ChannelResponse::Feedback(format!("Program {name} started"))).ok();
             self.logger.log(&format!("Starting program {}", &name));
@@ -372,9 +399,14 @@ impl Monitor {
     }
 
     fn restart_command(&mut self, names: Vec<String>, sender_result: &mut Sender<ChannelResponse>) {
-        let send_result = match self.restart_programs(names) {
+        let send_result = match self.restart_programs(names, sender_result) {
             Some(err) => sender_result.send(ChannelResponse::Error(err.to_string())),
-            None => sender_result.send(ChannelResponse::Feedback("Programs restarted successfully".to_string())),
+            None => {
+                self.logger.log("Restarting programs");
+                sender_result.send(ChannelResponse::Feedback(
+                    "Programs restarted successfully".to_string()
+                ))
+            }
         };
         if send_result.is_err() {
             self.logger.log(&format!("Failed to send restart command result: {send_result:?}"));
@@ -382,7 +414,7 @@ impl Monitor {
         
     }
 
-    fn restart_programs(&mut self, names: Vec<String>) -> Option<Box<dyn Error>> {
+    fn restart_programs(&mut self, names: Vec<String>, sender: &mut Sender<ChannelResponse>) -> Option<Box<dyn Error>> {
         for name in &names {
             if self.programs.get(name).is_none() {
                 return Some(format!("Program not found: {name}").into());
@@ -392,13 +424,13 @@ impl Monitor {
         if let Some(err) = self.stop_programs(names.to_owned()) {
             return Some(err);
         }
-        if let Some(err) = self.start_programs(names.to_owned()) {
+        if let Some(err) = self.start_programs(names.to_owned(), sender) {
             return Some(err);
         }
         None
     }
 
-    fn start_programs(&mut self, names: Vec<String>) -> Option<Box<dyn Error>> {
+    fn start_programs(&mut self, names: Vec<String>, sender_result: &mut Sender<ChannelResponse>) -> Option<Box<dyn Error>> {
         for name in names {
             if self.programs.get_mut(&name).is_none() {
                 return Some(format!("Program not found: {name}").into());
@@ -416,7 +448,7 @@ impl Monitor {
                 .collect();
 
             for pid in filtered_processus_ids {
-                self.start_processus(pid);
+                self.start_processus(pid, sender_result);
             }
 
             self.logger.log(&format!("Starting program {}", &name));
@@ -443,7 +475,7 @@ impl Monitor {
     }
 
 
-    fn autostart(&mut self) {
+    fn autostart(&mut self, sender_result: &mut Sender<ChannelResponse>) {
         let mut to_start: Vec<String> = Vec::new();
         for (name, program) in self.programs.iter() {
             if program.config.autostart {
@@ -451,7 +483,7 @@ impl Monitor {
                 to_start.push(name.to_owned());
             }
         }
-        if let Some(err) = self.start_programs(to_start) {
+        if let Some(err) = self.start_programs(to_start, sender_result) {
             self.logger.log(&format!("Failed to autostart some programs: {err}"));  
         }
     }
@@ -520,7 +552,7 @@ impl Monitor {
         self.programs.insert(name.clone(), program);
 
         if autostart {
-            self.start_programs(vec![name]);
+            self.start_programs(vec![name], sender);
         }
     }
 
