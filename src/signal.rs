@@ -1,5 +1,5 @@
-use strum_macros::{Display, EnumString, VariantNames};
 use std::error::Error;
+use strum_macros::{Display, EnumString, VariantNames};
 
 #[derive(EnumString, VariantNames, Display, Default, Debug, Copy, Clone, PartialEq)]
 #[strum(serialize_all = "UPPERCASE", ascii_case_insensitive)]

@@ -4,7 +4,6 @@ pub mod logger;
 pub mod instruction;
 pub mod parsing;
 
-
 use std::error::Error;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::Ordering;
@@ -19,17 +18,20 @@ use logger::Logger;
 use program::Program;
 use parsing::Parsing;
 use instruction::Instruction;
-
+use crate::signal::Signal;
 use crate::channel::{ChannelResponse, ProgramStatus};
-use crate::signal::{Signal};
 use crate::sys::{Libc, self};
 
 use self::processus::id::Id;
 
 const INACTIVE_FLAG: &str = "Inactive";
 
-fn sig_handler(_: i32) {
+fn hup_signal_handler(_: i32) {
     sys::RELOAD_INSTRUCTION.store(true, Ordering::SeqCst);
+}
+
+fn quiting_signal_handler(_: i32) {
+    sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
 }
 
 pub struct Monitor {
@@ -38,8 +40,6 @@ pub struct Monitor {
     logger: Logger,
     programs: HashMap<String, Program>,
 }
-
-
 
 impl Monitor {
     pub fn new(file_path: &PathBuf) -> Result<Self, Box<dyn Error>> {
@@ -70,10 +70,20 @@ impl Monitor {
         })
     }
 
-    pub fn execute(&mut self, receiver: Receiver<Instruction>, mut sender_result: Sender<ChannelResponse>) {
-        if Libc::signal(Signal::SIGHUP, sig_handler).is_err() {
+    pub fn capture_signal() {
+        if Libc::signal(Signal::SIGHUP, hup_signal_handler).is_err() {
             eprintln!("Signal function failed, taskmaster won't be able to handle SIGHUP");
         }
+
+        if  Libc::signal(Signal::SIGQUIT, quiting_signal_handler).is_err() ||
+            Libc::signal(Signal::SIGTERM, quiting_signal_handler).is_err()
+        {
+            eprintln!("Signal function failed, taskmaster won't be able to handle quiting signal");
+        }
+    }
+
+    pub fn execute(&mut self, receiver: Receiver<Instruction>, mut sender_result: Sender<ChannelResponse>) {
+        Self::capture_signal();
         self.autostart(&mut sender_result);
 
         let mut instruction_queue: VecDeque<Instruction> = VecDeque::new();
@@ -82,6 +92,8 @@ impl Monitor {
             if sys::RELOAD_INSTRUCTION.load(Ordering::SeqCst) {
                 instruction_queue.push_front(Instruction::Reload);
                 sys::RELOAD_INSTRUCTION.store(false, Ordering::SeqCst);
+            } else if sys::QUIT_INSTRUCTION.load(Ordering::SeqCst) {
+                instruction_queue.push_front(Instruction::Exit);
             }
             if let Ok(instruction) = receiver.try_recv() {
                 instruction_queue.push_back(instruction);
@@ -94,6 +106,7 @@ impl Monitor {
                     Instruction::Stop(programs) => self.stop_command(programs, &mut sender_result),
                     Instruction::Restart(programs) => self.restart_command(programs, &mut sender_result),
                     Instruction::Reload => self.reload(&mut sender_result),
+                    Instruction::Exit => self.exit_command(&mut sender_result),
                     // Instruction not from Cli
                     Instruction::RemoveProcessus(id) => self.remove_processus(id, &mut sender_result),
                     Instruction::StartProcessus(id) => self.start_processus(id, &mut sender_result),
@@ -101,7 +114,6 @@ impl Monitor {
                     Instruction::RetryStartProcessus(id) => self.start_processus(id, &mut sender_result),
                     Instruction::SetStatus(id, status) => self.set_status(id, status),
                     Instruction::KillProcessus(id) => self.kill_processus(id),
-                    Instruction::Exit => self.exit_command(),
                 }
             }
             let mut iteration_instructions: VecDeque<Instruction> = VecDeque::new();
@@ -140,50 +152,50 @@ impl Monitor {
         }
     }
 
-  fn start_processus(&mut self, id: Id, sender_result: &mut Sender<ChannelResponse>) {
-    if let Some(processus) = Self::get_processus(&mut self.processus, id) {
-        if let Some(program) = self.programs.get_mut(&processus.name) {
-            if let Some(command) = &mut program.command {
-                match processus.start_child(
-                    command,
-                    program.config.startretries,
-                    program.config.umask,
-                ) {
-                    Ok(false) => {
-                        self.logger.log(&format!(
-                            "Starting processus {} {}, {} attempt left", processus.name, processus.id, processus.retries)
+    fn start_processus(&mut self, id: Id, sender_result: &mut Sender<ChannelResponse>) {
+        if let Some(processus) = Self::get_processus(&mut self.processus, id) {
+            if let Some(program) = self.programs.get_mut(&processus.name) {
+                if let Some(command) = &mut program.command {
+                    match processus.start_child(
+                        command,
+                        program.config.startretries,
+                        program.config.umask,
+                    ) {
+                        Ok(false) => {
+                            self.logger.log(&format!(
+                                "Starting processus {} {}, {} attempt left", processus.name, processus.id, processus.retries)
+                            );
+                        }
+                        Ok(true) => {
+                            self.logger.log(&format!("Failed to start processus {} {}, no attempt left", processus.name, processus.id)
                         );
+                        }
+                        Err(err) => {
+                            let msg = format!("{err}");
+
+                            let _ = sender_result.send(
+                                ChannelResponse::Feedback(msg.clone())
+                            );
+
+                            self.logger.log(&msg);
+                        }
                     }
-                    Ok(true) => {
-                        self.logger.log(&format!("Failed to start processus {} {}, no attempt left", processus.name, processus.id)
+                } else {
+                    eprintln!(
+                        "Can't find command to start processus {} {}",
+                        processus.name,
+                        processus.id
                     );
-                    }
-                    Err(err) => {
-                        let msg = format!("{err}");
-
-                        let _ = sender_result.send(
-                            ChannelResponse::Feedback(msg.clone())
-                        );
-
-                        self.logger.log(&msg);
-                    }
                 }
             } else {
                 eprintln!(
-                    "Can't find command to start processus {} {}",
+                    "Can't find program to start processus {} {}",
                     processus.name,
                     processus.id
                 );
             }
-        } else {
-            eprintln!(
-                "Can't find program to start processus {} {}",
-                processus.name,
-                processus.id
-            );
         }
     }
-}
 
     fn reset_processus(&mut self, id: Id) {
         if let Some(processus) = Self::get_processus(&mut self.processus, id) {
@@ -488,9 +500,12 @@ impl Monitor {
         }
     }
 
-    fn exit_command(&mut self) {
+    fn exit_command(&mut self, sender_result: &mut Sender<ChannelResponse>) {
         let mut to_stop = Vec::new();
         self.logger.log("Shutting down taskmaster");
+        let _ = sender_result.send(
+            ChannelResponse::Feedback(format!("Waiting every programs to quit before exiting..."))
+        );
         for (name, _) in self.programs.iter() {
             to_stop.push(name.to_owned());
         }

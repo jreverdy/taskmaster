@@ -1,7 +1,7 @@
-use std::{str::FromStr, error::Error};
+use std::{error::Error, str::FromStr};
 
-use super::processus::Status;
 use super::processus::id::Id;
+use super::processus::Status;
 
 #[derive(Debug)]
 pub enum Instruction {
@@ -36,4 +36,3 @@ impl FromStr for Instruction {
         }
     }
 }
-

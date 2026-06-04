@@ -1,35 +1,26 @@
+pub mod channel;
 pub mod monitor;
 pub mod signal;
-pub mod channel;
 mod sys;
 
-use monitor::*;
+use crate::channel::{ChannelResponse, ProgramStatus};
 use monitor::instruction::*;
-use std::sync::mpsc::{self, Sender, Receiver};
-use std::{thread};
-use std::fmt::Write;
-use std::error::Error;
-use std::path::PathBuf;
-use rustyline::{Editor, history::DefaultHistory};
-
-
+use monitor::*;
 use rustyline::completion::{Completer, Pair};
+use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
+use rustyline::{history::DefaultHistory, Editor};
 use rustyline::{Context, ExternalPrinter, Helper};
-use rustyline::error::ReadlineError;
+use std::error::Error;
+use std::fmt::Write;
+use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
+use std::sync::atomic::Ordering;
 
-use crate::channel::{ChannelResponse, ProgramStatus};
-
-const COMMANDS: &[&str] = &[
-    "start",
-    "stop",
-    "restart",
-    "status",
-    "reload",
-    "exit",
-];
+const COMMANDS: &[&str] = &["start", "stop", "restart", "status", "reload", "exit"];
 
 struct CmdHelper;
 
@@ -49,7 +40,6 @@ impl Completer for CmdHelper {
         _: usize,
         _: &Context<'_>,
     ) -> Result<(usize, Vec<Pair>), ReadlineError> {
-
         let matches = COMMANDS
             .iter()
             .filter(|cmd| cmd.starts_with(line))
@@ -92,18 +82,31 @@ impl Taskmaster {
         let mut printer = rl.create_external_printer().unwrap();
 
         Self::print_welcome_message(&mut printer);
-        
+
         Taskmaster::receive_and_print_response(printer, receiver);
 
         loop {
             let line = rl.readline("Taskmaster $> ");
-            
+
             let line: String = match line {
                 Ok(l) => l,
-                Err(_) => break,
+                Err(ReadlineError::Interrupted) => {
+                    sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
+                    continue; 
+                }
+                Err(ReadlineError::Eof) => {
+                    sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
+                    continue;
+                }
+                Err(err) => {
+                    println!("Erreur de lecture : {:?}", err);
+                    break;
+                }
             };
 
-            if line.trim().is_empty() { continue; }
+            if line.trim().is_empty() {
+                continue;
+            }
 
             rl.add_history_entry(line.as_str()).ok();
 
@@ -114,7 +117,7 @@ impl Taskmaster {
                     continue;
                 }
             };
-            
+
             if sender.send(instruction).is_err() {
                 eprintln!("Failed to send instruction to backend");
             }
@@ -122,8 +125,8 @@ impl Taskmaster {
     }
 
     pub fn receive_and_print_response<P>(mut printer: P, receiver: Receiver<ChannelResponse>)
-    where 
-        P: ExternalPrinter + Send + 'static 
+    where
+        P: ExternalPrinter + Send + 'static,
     {
         thread::spawn(move || {
             let p_green = "\x1b[38;2;161;212;161m";
@@ -150,15 +153,19 @@ impl Taskmaster {
 
     pub fn format_status_result(statuses: Vec<ProgramStatus>) -> String {
         let mut buffer = String::new();
-        
-        let _ = writeln!(buffer, "\n    {:<5} | {:<20} | {:<10}", "ID", "NAME", "STATUS");
+
+        let _ = writeln!(
+            buffer,
+            "\n    {:<5} | {:<20} | {:<10}",
+            "ID", "NAME", "STATUS"
+        );
         let _ = writeln!(buffer, "    {:-<50}", "");
 
         for status in statuses {
-            let _ = writeln!(buffer, "    {:<5} | {:<20} | {:<10}", 
-                status.id, 
-                status.name, 
-                status.status
+            let _ = writeln!(
+                buffer,
+                "    {:<5} | {:<20} | {:<10}",
+                status.id, status.name, status.status
             );
         }
 

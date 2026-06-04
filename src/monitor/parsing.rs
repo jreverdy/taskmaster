@@ -1,8 +1,8 @@
-use std::str::FromStr;
-use std::{collections::HashMap, fs};
+use serde::{Deserialize, Deserializer};
 use std::error::Error;
 use std::path::PathBuf;
-use serde::{Deserialize, Deserializer};
+use std::str::FromStr;
+use std::{collections::HashMap, fs};
 
 use crate::monitor::program::Program;
 use crate::signal::Signal;
@@ -30,34 +30,49 @@ pub struct Config {
     pub env: HashMap<String, String>,
 }
 
-fn umask_deserialize<'de, D>(deserializer: D) -> Result<u32, D::Error> where D: Deserializer<'de>,
+fn umask_deserialize<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
 {
     let buf = String::deserialize(deserializer)?;
     u32::from_str_radix(&buf, 8).map_err(serde::de::Error::custom)
 }
 
-fn signal_deserialize<'de, D>(deserializer: D) -> Result<Signal, D::Error> where D: Deserializer<'de>,
+fn signal_deserialize<'de, D>(deserializer: D) -> Result<Signal, D::Error>
+where
+    D: Deserializer<'de>,
 {
     let buf: String = String::deserialize(deserializer)?;
     Signal::from_str(&buf).map_err(serde::de::Error::custom)
 }
 
-fn workingdir_deserialize<'de, D>(deserializer: D) -> Result<PathBuf, D::Error> where D: Deserializer<'de> {
+fn workingdir_deserialize<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let buf = PathBuf::deserialize(deserializer)?;
 
     if !buf.is_dir() {
-        Err(format!("Invalid working directory: {}", buf.to_str().unwrap())).map_err(serde::de::Error::custom)
+        Err(format!(
+            "Invalid working directory: {}",
+            buf.to_str().unwrap()
+        ))
+        .map_err(serde::de::Error::custom)
     } else {
         Ok(buf)
     }
 }
 
-fn autorestart_deserialize<'de, D>(deserializer: D) -> Result<String, D::Error> where D: Deserializer<'de> {
+fn autorestart_deserialize<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let buf = String::deserialize(deserializer)?;
 
     match buf.as_str() {
         "always" | "never" | "unexpected" => Ok(buf),
-        _ => Err("Invalid autostart parameter: always, never, unexpected").map_err(serde::de::Error::custom)
+        _ => Err("Invalid autostart parameter: always, never, unexpected")
+            .map_err(serde::de::Error::custom),
     }
 }
 

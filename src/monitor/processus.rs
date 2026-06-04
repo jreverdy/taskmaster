@@ -1,7 +1,7 @@
 use std::error::Error;
+use std::fmt;
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
-use std::fmt;
 
 use crate::signal::Signal;
 use crate::sys::Libc;
@@ -64,8 +64,13 @@ impl Processus {
         Duration::from_secs(duration as u64) < self.timer.elapsed()
     }
 
-    pub fn stop_child(&mut self, signal: Signal, start_retries: usize) -> Result<(), Box<dyn Error>> {
-        Libc::kill(&mut self.child, signal).map_err(|err| format!("Libc::kill function failed: {err}"))?;
+    pub fn stop_child(
+        &mut self,
+        signal: Signal,
+        start_retries: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        Libc::kill(&mut self.child, signal)
+            .map_err(|err| format!("Libc::kill function failed: {err}"))?;
         self.start_timer();
         if self.status != Status::Reloading {
             self.status = Status::Stoping;
@@ -74,7 +79,12 @@ impl Processus {
         Ok(())
     }
 
-    pub fn start_child(&mut self, command: &mut Command, start_retries: usize, mask: u32) -> Result<bool, Box<dyn Error>> {
+    pub fn start_child(
+        &mut self,
+        command: &mut Command,
+        start_retries: usize,
+        mask: u32,
+    ) -> Result<bool, Box<dyn Error>> {
         if self.retries <= 0 {
             self.reset_child(start_retries);
             Ok(true)
@@ -83,7 +93,8 @@ impl Processus {
             self.retries -= 1;
             self.child = Some(Libc::umask(command, mask).map_err(|err| {
                 self.reset_child(start_retries);
-                format!("Child {} spawn failed: {err}", self.name)})?);
+                format!("Child {} spawn failed: {err}", self.name)
+            })?);
             self.start_timer();
             Ok(false)
         }
