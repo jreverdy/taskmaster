@@ -30,10 +30,6 @@ fn hup_signal_handler(_: i32) {
     sys::RELOAD_INSTRUCTION.store(true, Ordering::SeqCst);
 }
 
-fn quiting_signal_handler(_: i32) {
-    sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
-}
-
 pub struct Monitor {
     config_file_path: PathBuf,
     processus: Vec<Processus>,
@@ -73,12 +69,6 @@ impl Monitor {
     pub fn capture_signal() {
         if Libc::signal(Signal::SIGHUP, hup_signal_handler).is_err() {
             eprintln!("Signal function failed, taskmaster won't be able to handle SIGHUP");
-        }
-
-        if  Libc::signal(Signal::SIGQUIT, quiting_signal_handler).is_err() ||
-            Libc::signal(Signal::SIGTERM, quiting_signal_handler).is_err()
-        {
-            eprintln!("Signal function failed, taskmaster won't be able to handle quiting signal");
         }
     }
 

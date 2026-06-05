@@ -92,11 +92,11 @@ impl Taskmaster {
                 Ok(l) => l,
                 Err(ReadlineError::Interrupted) => {
                     sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
-                    continue;
+                    loop{}
                 }
                 Err(ReadlineError::Eof) => {
                     sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
-                    continue;
+                    loop{}
                 }
                 Err(err) => {
                     println!("Erreur de lecture : {:?}", err);
