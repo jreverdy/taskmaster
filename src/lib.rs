@@ -19,8 +19,6 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc::RecvTimeoutError;
-use std::time::Duration;
 
 const COMMANDS: &[&str] = &["start", "stop", "restart", "status", "reload", "exit"];
 
@@ -77,75 +75,54 @@ impl Taskmaster {
         Ok(())
     }
 
- fn cli(&mut self, sender: Sender<Instruction>, receiver: Receiver<ChannelResponse>) {
-    let mut rl = Editor::<CmdHelper, DefaultHistory>::new().unwrap();
-    rl.set_helper(Some(CmdHelper));
+    fn cli(&mut self, sender: Sender<Instruction>, receiver: Receiver<ChannelResponse>) {
+        let mut rl = Editor::<CmdHelper, DefaultHistory>::new().unwrap();
+        rl.set_helper(Some(CmdHelper));
 
-    let mut printer = rl.create_external_printer().unwrap();
+        let mut printer = rl.create_external_printer().unwrap();
 
-    Self::print_welcome_message(&mut printer);
-    Taskmaster::receive_and_print_response(printer, receiver);
+        Self::print_welcome_message(&mut printer);
 
-    // Thread dédié à la lecture readline
-    let (line_tx, line_rx) = std::sync::mpsc::channel::<String>();
+        Taskmaster::receive_and_print_response(printer, receiver);
 
-    std::thread::spawn(move || {
         loop {
-            // Si quit demandé, on sort du thread readline aussi
-            if sys::QUIT_INSTRUCTION.load(Ordering::SeqCst) {
-                break;
-            }
+            let line = rl.readline("Taskmaster $> ");
 
-            match rl.readline("Taskmaster $> ") {
-                Ok(line) => {
-                    if line_tx.send(line).is_err() {
-                        break; // Receiver drop → boucle principale terminée
-                    }
-                }
-                Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
+            let line: String = match line {
+                Ok(l) => l,
+                Err(ReadlineError::Interrupted) => {
                     sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
-                    break;
-                }
-                Err(err) => {
-                    eprintln!("Erreur de lecture : {:?}", err);
-                    break;
-                }
-            }
-        }
-    });
-
-    // Boucle principale — non bloquante sur readline
-    loop {
-        if sys::QUIT_INSTRUCTION.load(Ordering::SeqCst) {
-            break;
-        }
-
-        match line_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(line) => {
-                if line.trim().is_empty() {
                     continue;
                 }
-
-                // add_history_entry ne peut plus être appelé ici (rl est dans l'autre thread)
-                // → à déplacer dans le thread readline avant le send
-
-                let instruction: Instruction = match line.trim().parse() {
-                    Ok(res) => res,
-                    Err(err) => {
-                        eprintln!("    \x1b[38;2;255;187;119m{err}\x1b[0m");
-                        continue;
-                    }
-                };
-
-                if sender.send(instruction).is_err() {
-                    eprintln!("Failed to send instruction to backend");
+                Err(ReadlineError::Eof) => {
+                    sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
+                    continue;
                 }
+                Err(err) => {
+                    println!("Erreur de lecture : {:?}", err);
+                    break;
+                }
+            };
+
+            if line.trim().is_empty() {
+                continue;
             }
-            Err(RecvTimeoutError::Timeout) => continue,
-            Err(RecvTimeoutError::Disconnected) => break,
+
+            rl.add_history_entry(line.as_str()).ok();
+
+            let instruction: Instruction = match line.trim().parse() {
+                Ok(res) => res,
+                Err(err) => {
+                    eprintln!("    \x1b[38;2;255;187;119m{err}\x1b[0m");
+                    continue;
+                }
+            };
+
+            if sender.send(instruction).is_err() {
+                eprintln!("Failed to send instruction to backend");
+            }
         }
     }
-}
 
     pub fn receive_and_print_response<P>(mut printer: P, receiver: Receiver<ChannelResponse>)
     where
