@@ -86,17 +86,21 @@ impl Taskmaster {
         Taskmaster::receive_and_print_response(printer, receiver);
 
         loop {
+            if sys::QUIT_INSTRUCTION.load(Ordering::SeqCst) {
+                println!("looped");
+                continue;
+            }
             let line = rl.readline("Taskmaster $> ");
 
             let line: String = match line {
                 Ok(l) => l,
                 Err(ReadlineError::Interrupted) => {
                     sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
-                    loop {}
+                    continue;
                 }
                 Err(ReadlineError::Eof) => {
                     sys::QUIT_INSTRUCTION.store(true, Ordering::SeqCst);
-                    loop {}
+                    continue;
                 }
                 Err(err) => {
                     println!("Erreur de lecture : {:?}", err);

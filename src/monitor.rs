@@ -506,6 +506,7 @@ impl Monitor {
         let _ = sender_result.send(
             ChannelResponse::Feedback(format!("Waiting every programs to quit before exiting..."))
         );
+        thread::sleep(Duration::from_secs(1));
         for (name, _) in self.programs.iter() {
             to_stop.push(name.to_owned());
         }
