@@ -1,6 +1,6 @@
 use std::env;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 pub fn get_config_from_args() -> PathBuf {
@@ -26,14 +26,14 @@ pub fn get_config_from_args() -> PathBuf {
     path
 }
 
-pub fn check_valid_path(path: &PathBuf) -> Result<(), Box<dyn Error>> {
+pub fn check_valid_path(path: &Path) -> Result<(), Box<dyn Error>> {
     match path.try_exists() {
         Ok(true) => Ok(()),
         _ => Err("Path does not point to an existing entity".into()),
     }
 }
 
-pub fn check_is_file(path: &PathBuf) -> Result<(), Box<dyn Error>> {
+pub fn check_is_file(path: &Path) -> Result<(), Box<dyn Error>> {
     check_valid_path(path)?;
     if !path.is_file() {
         Err("File does not exist or is not accessible".into())
@@ -42,7 +42,7 @@ pub fn check_is_file(path: &PathBuf) -> Result<(), Box<dyn Error>> {
     }
 }
 
-pub fn check_file_with_extension(path: &PathBuf, extension: &str) -> Result<(), Box<dyn Error>> {
+pub fn check_file_with_extension(path: &Path, extension: &str) -> Result<(), Box<dyn Error>> {
     check_is_file(path)?;
     match path.extension() {
         Some(x) => {
@@ -52,7 +52,7 @@ pub fn check_file_with_extension(path: &PathBuf, extension: &str) -> Result<(), 
                 Ok(())
             }
         }
-        None => Err("Failed to retreive file extension"),
+        None => Err("Failed to retrieve file extension"),
     }?;
     Ok(())
 }

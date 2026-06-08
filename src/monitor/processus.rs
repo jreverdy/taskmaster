@@ -15,7 +15,7 @@ pub mod id;
 #[derive(Debug, PartialEq)]
 pub enum Status {
     Starting,
-    Stoping,
+    Stopping,
     Active,
     Inactive,
     Reloading,
@@ -26,7 +26,7 @@ impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Status::Starting => write!(f, "Starting"),
-            Status::Stoping => write!(f, "Stoping"),
+            Status::Stopping => write!(f, "Stopping"),
             Status::Active => write!(f, "Active"),
             Status::Inactive => write!(f, "Inactive"),
             Status::Reloading => write!(f, "Reloading"),
@@ -73,7 +73,7 @@ impl Processus {
             .map_err(|err| format!("Libc::kill function failed: {err}"))?;
         self.start_timer();
         if self.status != Status::Reloading {
-            self.status = Status::Stoping;
+            self.status = Status::Stopping;
         }
         self.retries = start_retries;
         Ok(())
@@ -85,7 +85,7 @@ impl Processus {
         start_retries: usize,
         mask: u32,
     ) -> Result<bool, Box<dyn Error>> {
-        if self.retries <= 0 {
+        if self.retries == 0 {
             self.reset_child(start_retries);
             Ok(true)
         } else {

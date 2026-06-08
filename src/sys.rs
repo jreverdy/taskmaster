@@ -12,7 +12,7 @@ extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
 }
 
-const SIG_ERR: usize = 18_446_744_073_709_551_615usize;
+const SIG_ERR: usize = usize::MAX;
 
 pub static RELOAD_INSTRUCTION: AtomicBool = AtomicBool::new(false);
 pub static QUIT_INSTRUCTION: AtomicBool = AtomicBool::new(false);

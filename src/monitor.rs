@@ -4,25 +4,30 @@ pub mod logger;
 pub mod instruction;
 pub mod parsing;
 
-use std::error::Error;
-use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::Ordering;
-use std::sync::mpsc::{Sender, Receiver};
-use std::{thread, vec, process};
-use std::time::Duration;
-use std::path::PathBuf;
-use std::process::ExitStatus;
-use std::os::unix::process::ExitStatusExt;
-use processus::{Status, Processus};
-use logger::Logger;
-use program::Program;
-use parsing::Parsing;
+use crate::{
+    channel::{ChannelResponse, ProgramStatus},
+    signal::Signal,
+    sys::{self, Libc},
+};
 use instruction::Instruction;
-use crate::signal::Signal;
-use crate::channel::{ChannelResponse, ProgramStatus};
-use crate::sys::{Libc, self};
-
-use self::processus::id::Id;
+use logger::Logger;
+use parsing::Parsing;
+use processus::{id::Id, Processus, Status};
+use program::Program;
+use std::{
+    collections::{HashMap, VecDeque},
+    error::Error,
+    os::unix::process::ExitStatusExt,
+    path::PathBuf,
+    process::{self, ExitStatus},
+    sync::{
+        atomic::Ordering,
+        mpsc::{Receiver, Sender},
+    },
+    thread,
+    time::Duration,
+    vec,
+};
 
 const INACTIVE_FLAG: &str = "Inactive";
 
@@ -40,13 +45,14 @@ pub struct Monitor {
 impl Monitor {
     pub fn new(file_path: &PathBuf) -> Result<Self, Box<dyn Error>> {
         let mut programs = Parsing::parse(file_path)?;
-        let logger = Logger::new("taskmaster.log")?;
+        let mut logger = Logger::new("taskmaster.log")?;
         let mut processus: Vec<Processus> = Vec::new();
 
         let mut invalid_confs = Vec::<String>::new();
         for (name, program) in programs.iter_mut() {
             if let Err(err) = program.build_command() {
                 eprintln!("Program {name}: {err}");
+                logger.log(&format!("Failed to build command for program {name}: {err}"));
                 invalid_confs.push(name.to_owned());
                 continue;
             }
@@ -176,6 +182,7 @@ impl Monitor {
                         processus.name,
                         processus.id
                     );
+                    self.logger.log(&format!("Can't find command to start processus {} {}", processus.name, processus.id));
                 }
             } else {
                 eprintln!(
@@ -183,6 +190,7 @@ impl Monitor {
                     processus.name,
                     processus.id
                 );
+                self.logger.log(&format!("Can't find program to start processus {} {}", processus.name, processus.id));
             }
         }
     }
@@ -200,7 +208,7 @@ impl Monitor {
         if let Some(processus) = Self::get_processus(&mut self.processus, id) {
             let processus_name = processus.name.to_owned();
             self.processus.retain(|proc| proc.id != id);
-            if self.processus.iter().filter(|e| e.name == processus_name).collect::<Vec<&Processus>>().is_empty() {
+            if !self.processus.iter().any(|e| e.name == processus_name) {
                 self.programs.remove(&processus_name);
                 let name = if let Some((name, _)) = self.programs.iter().find(|e| e.0 == &[INACTIVE_FLAG, &processus_name].concat()) {
                     name.to_owned()
@@ -264,7 +272,7 @@ impl Monitor {
         }
     }
 
-    fn monitor_stoping_processus(program: &Program, processus: &Processus, exit_code: Option<ExitStatus>) -> Option<Instruction> {
+    fn monitor_stopping_processus(program: &Program, processus: &Processus, exit_code: Option<ExitStatus>) -> Option<Instruction> {
         match exit_code {
             Some(_) => Some(Instruction::ResetProcessus(processus.id)),
             None => {
@@ -297,7 +305,7 @@ impl Monitor {
             Status::Active => Self::monitor_active_processus(program, processus, exit_code),
             Status::Inactive => {Self::monitor_inactive_processus(processus); None},
             Status::Starting => Self::monitor_starting_processus(program, processus, exit_code),
-            Status::Stoping => Self::monitor_stoping_processus(program, processus, exit_code),
+            Status::Stopping => Self::monitor_stopping_processus(program, processus, exit_code),
             Status::Reloading => Self::monitor_remove_processus(program, processus, exit_code),
         }
     }
@@ -315,6 +323,10 @@ impl Monitor {
                                 if processus.status != Status::Reloading {
                                     self.logger.log(&format!("Processus {} {} was stopped by a signal: {}", processus.name, processus.id, signal));
                                 }
+                        } else if let Some(exit_code) = code.code() {
+                            let program = self.programs.get(&processus.name).unwrap();
+                            let expected = if program.config.exitcodes.contains(&exit_code) { "expected" } else { "unexpected" };
+                            self.logger.log(&format!("Processus {} {} exited with code {} ({})", processus.name, processus.id, exit_code, expected));
                             }
                         }
                         if let Some(instruction) = Self::monitor_processus(self.programs.get(&processus.name).unwrap(), processus, code) {
@@ -375,22 +387,26 @@ impl Monitor {
                 continue;
             };
             for processus in self.processus.iter_mut().filter(|e| e.name == name) {
-                Self::stop_processus(processus, program);
+                Self::stop_processus(processus, program, &mut self.logger);
             }
             sender_result.send(ChannelResponse::Feedback(format!("Program {name} stopped"))).ok();
-            self.logger.log(&format!("Stoping {}", &name));
+            self.logger.log(&format!("Stopping {}", &name));
         }
     }
 
-    fn stop_processus(processus: &mut Processus, program: &mut Program) {
+    fn stop_processus(processus: &mut Processus, program: &mut Program, logger: &mut Logger) {
         if let Some(child) = processus.child.as_mut() {
             match child.try_wait() {
                 Ok(Some(exitstatus)) => {
-                    println!("The program {} as stoped running, exit code : {exitstatus}", processus.name);
+                    let msg = format!("The program {} is already stopped, exit code : {exitstatus}", processus.name);
+                    println!("{msg}");
+                    logger.log(&msg);
                 },
                 Ok(None) => {
                     if let Err(err) = processus.stop_child(program.config.stopsignal, program.config.startretries) {
-                        eprintln!("{err}");
+                        let msg = format!("Failed to stop program {}: {}", processus.name, err);
+                        eprintln!("{msg}");
+                        logger.log(&msg);
                     }
                 }
                 Err(_) => {
@@ -467,7 +483,7 @@ impl Monitor {
             };
 
             for processus in self.processus.iter_mut().filter(|e| e.name == name) {
-                Self::stop_processus(processus, program);
+                Self::stop_processus(processus, program, &mut self.logger);
             }
 
             self.logger.log(&format!("Stopping {}", &name));
@@ -496,7 +512,6 @@ impl Monitor {
         let _ = sender_result.send(
             ChannelResponse::Feedback(format!("Waiting every programs to quit before exiting..."))
         );
-        thread::sleep(Duration::from_secs(1));
         for (name, _) in self.programs.iter() {
             to_stop.push(name.to_owned());
         }
@@ -523,12 +538,14 @@ impl Monitor {
             self.stop_programs(vec![name.clone()]);
             self.programs.remove(&name);
             self.processus.retain(|p| p.name != name);
+            self.logger.log(&format!("Program {} removed (no longer in config)", name));
         }
     }
 
     fn update_program(&mut self, name: String, mut program: Program, sender: &mut Sender<ChannelResponse>) {
         if let Err(err) = program.build_command() {
             let _ = sender.send(ChannelResponse::Error(format!("Program {name}: {err}")));
+            self.logger.log(&format!("Failed to build command for updated program {name}: {err}"));
             return;
         }
 
@@ -540,13 +557,15 @@ impl Monitor {
 
         program.deactivate();
         
-        let inactive_key = Program::prefix_name(INACTIVE_FLAG, name);
+        let inactive_key = Program::prefix_name(INACTIVE_FLAG, name.clone());
+        self.logger.log(&format!("Program {} updated (config changed)", name));
         self.programs.insert(inactive_key, program);
     }
 
     fn add_program(&mut self, name: String, mut program: Program, sender: &mut Sender<ChannelResponse>) {
         if let Err(err) = program.build_command() {
             let _ = sender.send(ChannelResponse::Error(format!("Program {name}: {err}")));
+            self.logger.log(&format!("Failed to build command for new program {name}: {err}"));
             return;
         }
 
@@ -554,6 +573,7 @@ impl Monitor {
             self.processus.push(Processus::new(&name, &program));
         }
 
+        self.logger.log(&format!("Program {} added (new in config)", name));
         let autostart = program.config.autostart;
         self.programs.insert(name.clone(), program);
 
@@ -590,6 +610,7 @@ impl Monitor {
             }
         }
 
+        self.logger.log("Config reloaded successfully");
         let _ = sender_result.send(ChannelResponse::Feedback("Config reloaded successfully".to_owned()));
     }
 }
