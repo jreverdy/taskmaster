@@ -23,12 +23,9 @@ impl Program {
     pub fn build_command(&mut self) -> Result<(), Box<dyn Error>> {
         let mut parts = self.config.cmd.split_whitespace();
         let program_name = parts.next().ok_or("Missing program name")?;
-        self.command = Some(Command::new(program_name));
 
-        self.command
-            .as_mut()
-            .unwrap()
-            .args(parts)
+        let mut cmd = Command::new(program_name);
+        cmd.args(parts)
             .envs(self.config.env.iter())
             .current_dir(&self.config.workingdir);
 
@@ -36,12 +33,10 @@ impl Program {
             .fd_setup()
             .map_err(|err| format!("Failed to parse std's: {err}"))?;
 
-        self.command
-            .as_mut()
-            .unwrap()
-            .stdout(output.0)
-            .stderr(output.1);
+        cmd.stdout(output.0)
+           .stderr(output.1);
 
+        self.command = Some(cmd);
         Ok(())
     }
 
@@ -65,7 +60,7 @@ impl Program {
         let stdout = if self.config.stdout.as_os_str().is_empty() {
             Stdio::null()
         } else {
-            let s = self.config.workingdir.clone().join(&self.config.stdout);
+            let s = self.config.workingdir.join(&self.config.stdout);
             Stdio::from(
                 File::create(&s).map_err(|err| format!("stdout = '{}' {}", s.display(), err))?,
             )
@@ -73,7 +68,7 @@ impl Program {
         let stderr = if self.config.stderr.as_os_str().is_empty() {
             Stdio::null()
         } else {
-            let s = self.config.workingdir.clone().join(&self.config.stderr);
+            let s = self.config.workingdir.join(&self.config.stderr);
             Stdio::from(
                 File::create(&s).map_err(|err| format!("stderr = '{}' {}", s.display(), err))?,
             )

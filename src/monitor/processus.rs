@@ -69,7 +69,7 @@ impl Processus {
         signal: Signal,
         start_retries: usize,
     ) -> Result<(), Box<dyn Error>> {
-        Libc::kill(&mut self.child, signal)
+        Libc::kill(&self.child, signal)
             .map_err(|err| format!("Libc::kill function failed: {err}"))?;
         self.start_timer();
         if self.status != Status::Reloading {

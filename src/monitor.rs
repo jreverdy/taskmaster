@@ -112,9 +112,7 @@ impl Monitor {
                     Instruction::KillProcessus(id) => self.kill_processus(id),
                 }
             }
-            let mut iteration_instructions: VecDeque<Instruction> = VecDeque::new();
-            iteration_instructions.extend(self.monitor());
-            instruction_queue.append(&mut iteration_instructions);
+            instruction_queue.extend(self.monitor());
             thread::sleep(Duration::from_millis(300));
         }
     }
@@ -127,9 +125,7 @@ impl Monitor {
     }
 
     fn kill_processus(&mut self, id: Id) {
-        let processus = Self::get_processus(&mut self.processus, id);
-
-        if let Some(processus) = processus{
+        if let Some(processus) = Self::get_processus(&mut self.processus, id) {
             if let Some(child) = &mut processus.child {
                 child.kill().ok();
             }
@@ -342,16 +338,15 @@ impl Monitor {
     }
 
     fn status_command(&mut self, sender_result: &mut Sender<ChannelResponse>) {
-
-        let mut statuses: Vec<ProgramStatus> = Vec::new();
-        for processus in self.processus.iter() {
-            let status = ProgramStatus {
+        let statuses: Vec<ProgramStatus> = self.processus
+            .iter()
+            .map(|processus| ProgramStatus {
                 id: processus.id.to_string(),
-                name: processus.name.to_owned(),
+                name: processus.name.clone(),
                 status: processus.status.to_string(),
-            };
-            statuses.push(status);
-        }
+            })
+            .collect();
+
         sender_result.send(ChannelResponse::Status(statuses)).ok();
 
         self.logger.log("Displaying Status");
@@ -363,13 +358,11 @@ impl Monitor {
                 sender_result.send(ChannelResponse::Error(format!("Program not found: {name}"))).ok();
                 continue;
             }
-            let filtered_processus_ids: Vec<Id> = self.processus.iter().filter_map(|e| {
-                if e.name == name && e.status == Status::Inactive {
-                    Some(e.id)
-                } else {
-                    None
-                }
-            }).collect();
+            let filtered_processus_ids: Vec<Id> = self.processus
+                .iter()
+                .filter(|e| e.name == name && e.status == Status::Inactive)
+                .map(|e| e.id)
+                .collect();
             for pid in filtered_processus_ids {
                 self.start_processus(pid, sender_result);
             }
@@ -456,13 +449,8 @@ impl Monitor {
 
             let filtered_processus_ids: Vec<Id> = self.processus
                 .iter()
-                .filter_map(|e| {
-                    if e.name == name && e.status == Status::Inactive {
-                        Some(e.id)
-                    } else {
-                        None
-                    }
-                })
+                .filter(|e| e.name == name && e.status == Status::Inactive)
+                .map(|e| e.id)
                 .collect();
 
             for pid in filtered_processus_ids {
@@ -510,7 +498,7 @@ impl Monitor {
         let mut to_stop = Vec::new();
         self.logger.log("Shutting down taskmaster");
         let _ = sender_result.send(
-            ChannelResponse::Feedback(format!("Waiting every programs to quit before exiting..."))
+            ChannelResponse::Feedback("Waiting every programs to quit before exiting...".to_string())
         );
         for (name, _) in self.programs.iter() {
             to_stop.push(name.to_owned());

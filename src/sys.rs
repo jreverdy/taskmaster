@@ -35,10 +35,10 @@ impl Libc {
         }
     }
 
-    pub fn kill(child: &mut Option<Child>, sig: Signal) -> Result<(), Box<dyn Error>> {
+    pub fn kill(child: &Option<Child>, sig: Signal) -> Result<(), Box<dyn Error>> {
         unsafe {
             if kill(
-                child.as_mut().ok_or("child process does not exist")?.id() as i32,
+                child.as_ref().ok_or("child process does not exist")?.id() as i32,
                 sig as i32,
             ) != 0
             {

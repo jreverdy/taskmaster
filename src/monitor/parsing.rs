@@ -1,11 +1,31 @@
 use serde::{Deserialize, Deserializer};
 use std::error::Error;
+use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};
 
 use crate::monitor::program::Program;
 use crate::signal::Signal;
+
+#[derive(Deserialize, Debug, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AutoRestart {
+    Always,
+    #[default]
+    Never,
+    Unexpected,
+}
+
+impl AutoRestart {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::Never => "never",
+            Self::Unexpected => "unexpected",
+        }
+    }
+}
 
 #[derive(Deserialize, Debug, Default, PartialEq)]
 #[serde(deny_unknown_fields, default)]
@@ -17,8 +37,7 @@ pub struct Config {
     #[serde(deserialize_with = "workingdir_deserialize")]
     pub workingdir: PathBuf,
     pub autostart: bool,
-    #[serde(deserialize_with = "autorestart_deserialize")]
-    pub autorestart: String,
+    pub autorestart: AutoRestart,
     pub exitcodes: Vec<i32>,
     pub startretries: usize,
     pub starttime: usize,
@@ -53,26 +72,12 @@ where
     let buf = PathBuf::deserialize(deserializer)?;
 
     if !buf.is_dir() {
-        Err(format!(
+        Err(serde::de::Error::custom(format!(
             "Invalid working directory: {}",
-            buf.to_str().unwrap()
-        ))
-        .map_err(serde::de::Error::custom)
+            buf.display()
+        )))
     } else {
         Ok(buf)
-    }
-}
-
-fn autorestart_deserialize<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let buf = String::deserialize(deserializer)?;
-
-    match buf.as_str() {
-        "always" | "never" | "unexpected" => Ok(buf),
-        _ => Err("Invalid autostart parameter: always, never, unexpected")
-            .map_err(serde::de::Error::custom),
     }
 }
 
@@ -83,14 +88,13 @@ pub struct Parsing {
 }
 
 impl Parsing {
-    pub fn parse(file_path: &PathBuf) -> Result<HashMap<String, Program>, Box<dyn Error>> {
-        let mut programs: HashMap<String, Program> = HashMap::new();
+    pub fn parse<P: AsRef<Path>>(file_path: P) -> Result<HashMap<String, Program>, Box<dyn Error>> {
         let file_content = fs::read_to_string(file_path)?;
         let parsed: Parsing = serde_yaml::from_str(&file_content)?;
 
-        for (name, config) in parsed.tasks.into_iter() {
-            programs.insert(name, Program::new(config, None, true));
-        }
-        Ok(programs)
+        Ok(parsed.tasks
+            .into_iter()
+            .map(|(name, config)| (name, Program::new(config, None, true)))
+            .collect())
     }
 }
