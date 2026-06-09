@@ -8,6 +8,7 @@ use std::{
 pub struct Program {
     pub config: Config,
     pub command: Option<Command>,
+    pub pending_config: Option<Config>,
     active: bool,
 }
 
@@ -16,6 +17,7 @@ impl Program {
         Self {
             config,
             command,
+            pending_config: None,
             active,
         }
     }
@@ -50,10 +52,6 @@ impl Program {
 
     pub fn activate(&mut self) {
         self.active = true;
-    }
-
-    pub fn prefix_name(prefix: &str, name: String) -> String {
-        format!("{prefix}{name}")
     }
 
     fn fd_setup(&self) -> Result<(Stdio, Stdio), Box<dyn Error>> {

@@ -29,8 +29,6 @@ use std::{
     vec,
 };
 
-const INACTIVE_FLAG: &str = "Inactive";
-
 fn hup_signal_handler(_: i32) {
     sys::RELOAD_INSTRUCTION.store(true, Ordering::SeqCst);
 }
@@ -201,27 +199,38 @@ impl Monitor {
     }
 
     fn remove_processus(&mut self, id: Id, sender: &mut Sender<ChannelResponse>) {
-        if let Some(processus) = Self::get_processus(&mut self.processus, id) {
-            let processus_name = processus.name.to_owned();
-            self.processus.retain(|proc| proc.id != id);
-            if !self.processus.iter().any(|e| e.name == processus_name) {
-                self.programs.remove(&processus_name);
-                let name = if let Some((name, _)) = self.programs.iter().find(|e| e.0 == &[INACTIVE_FLAG, &processus_name].concat()) {
-                    name.to_owned()
-                } else {
+        // Remove (retain) processus and stop if there is other processus with the same name
+        let processus_name = match self.processus.iter().find(|p| p.id == id) {
+            Some(p) => p.name.clone(),
+            None => return,
+        };
+        self.processus.retain(|proc| proc.id != id);
+        if self.processus.iter().any(|proc| proc.name == processus_name) {
+            return;
+        }
+
+        // Check if there is an ongoing reload configuration
+        let mut should_reload = false;
+        if let Some(program) = self.programs.get_mut(&processus_name) {
+            if let Some(pending) = program.pending_config.take() {
+                program.config = pending;
+                program.activate();
+                if let Err(err) = program.build_command() {
+                    let _ = sender.send(ChannelResponse::Error(format!("Program {processus_name}: {err}")));
+                    self.logger.log(&format!("Failed to build command for reloaded program {processus_name}: {err}"));
                     return;
-                };
-                if let Some(mut program) = self.programs.remove(&name) {
-                    program.activate();
-                    self.programs.insert(processus_name.to_owned(), program);
-                    let program = self.programs.get(&processus_name).unwrap();
-                    for _ in 0..program.config.numprocs {
-                        self.processus.push(Processus::new(&processus_name, program));
-                    }
-                    if program.config.autostart {
-                        self.start_programs(vec![processus_name], sender);
-                    }
                 }
+                should_reload = true;
+            }
+        }
+
+        if should_reload {
+            let program = self.programs.get(&processus_name).unwrap();
+            for _ in 0..program.config.numprocs {
+                self.processus.push(Processus::new(&processus_name, program));
+            }
+            if program.config.autostart {
+                self.start_programs(vec![processus_name], sender);
             }
         }
     }
@@ -319,10 +328,10 @@ impl Monitor {
                                 if processus.status != Status::Reloading {
                                     self.logger.log(&format!("Processus {} {} was stopped by a signal: {}", processus.name, processus.id, signal));
                                 }
-                        } else if let Some(exit_code) = code.code() {
-                            let program = self.programs.get(&processus.name).unwrap();
-                            let expected = if program.config.exitcodes.contains(&exit_code) { "expected" } else { "unexpected" };
-                            self.logger.log(&format!("Processus {} {} exited with code {} ({})", processus.name, processus.id, exit_code, expected));
+                            } else if let Some(exit_code) = code.code() {
+                                let program = self.programs.get(&processus.name).unwrap();
+                                let expected = if program.config.exitcodes.contains(&exit_code) { "expected" } else { "unexpected" };
+                                self.logger.log(&format!("Processus {} {} exited with code {} ({})", processus.name, processus.id, exit_code, expected));
                             }
                         }
                         if let Some(instruction) = Self::monitor_processus(self.programs.get(&processus.name).unwrap(), processus, code) {
@@ -518,7 +527,7 @@ impl Monitor {
 
     fn clear_removed_programs(&mut self, new_config: &HashMap<String, Program>) {
         let to_remove: Vec<String> = self.programs.keys()
-            .filter(|name| !name.starts_with(INACTIVE_FLAG) && !new_config.contains_key(*name))
+            .filter(|name| !new_config.contains_key(*name))
             .cloned()
             .collect();
 
@@ -530,24 +539,19 @@ impl Monitor {
         }
     }
 
-    fn update_program(&mut self, name: String, mut program: Program, sender: &mut Sender<ChannelResponse>) {
-        if let Err(err) = program.build_command() {
-            let _ = sender.send(ChannelResponse::Error(format!("Program {name}: {err}")));
-            self.logger.log(&format!("Failed to build command for updated program {name}: {err}"));
-            return;
-        }
-
+    fn update_program(&mut self, name: String, program: Program, _sender: &mut Sender<ChannelResponse>) {
         self.stop_programs(vec![name.clone()]);
 
         self.processus.iter_mut()
             .filter(|p| p.name == name)
             .for_each(|p| p.status = Status::Reloading);
 
-        program.deactivate();
+        if let Some(existing_program) = self.programs.get_mut(&name) {
+            existing_program.pending_config = Some(program.config);
+            existing_program.deactivate();
+        }
         
-        let inactive_key = Program::prefix_name(INACTIVE_FLAG, name.clone());
         self.logger.log(&format!("Program {} updated (config changed)", name));
-        self.programs.insert(inactive_key, program);
     }
 
     fn add_program(&mut self, name: String, mut program: Program, sender: &mut Sender<ChannelResponse>) {
