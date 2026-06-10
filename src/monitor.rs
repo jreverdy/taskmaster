@@ -509,9 +509,16 @@ impl Monitor {
         let _ = sender_result.send(
             ChannelResponse::Feedback("Waiting every programs to quit before exiting...".to_string())
         );
+        
         for (name, _) in self.programs.iter() {
+
             to_stop.push(name.to_owned());
         }
+
+        for processus in self.processus.iter_mut() {
+            processus.status = Status::Stopping;
+        }
+
         self.stop_programs(to_stop);
         while self.processus.iter().any(|e| e.child.is_some()) {
             for instruction in self.monitor() {
